@@ -1,0 +1,30 @@
+{
+  "name": "gcp-ai-integration-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A mock-first TypeScript gateway that demonstrates secure, resilient Vertex AI Gemini integration with ADC and IAM.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
+    "@google/genai": "^1.31.0",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.5.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

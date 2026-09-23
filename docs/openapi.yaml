@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: GCP AI Integration Gateway
+  version: 1.0.0
+  description: |
+    A secure, mock-first gateway for text generation through Vertex AI Gemini.
+    The public contract intentionally contains no Google credentials or model-provider keys.
+    This portfolio sample delegates client authentication to an upstream enterprise control.
+  license:
+    name: MIT
+    url: https://opensource.org/license/mit
+servers:
+  - url: /
+    description: Relative URL for local development and reverse-proxy deployment
+security: []
+paths:
+  /healthz:
+    get:
+      summary: Return gateway readiness information
+      operationId: getHealth
+      responses:
+        '200':
+          description: The gateway process is ready to accept requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: The process is not ready to serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+  /v1/ai/generate:
+    post:
+      summary: Generate text through the configured AI provider
+      operationId: generateText
+      description: |
+        The gateway validates and sanitizes the payload before it reaches an AI provider.
+        `X-Client-Id` partitions rate-limit quotas only; production deployments must authenticate
+        clients upstream through a trusted identity-aware proxy, API gateway, mTLS, or equivalent control.
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationRequest'
+            examples:
+              incident-summary:
+                summary: A valid text request
+                value:
+                  prompt: Summarize the following internal incident report in three bullet points.
+                  system_instruction: Do not include confidential account numbers.
+                  max_output_tokens: 256
+      responses:
+        '200':
+          description: Generated text was returned by the configured provider.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationSuccess'
+        '400':
+          description: The payload was invalid or likely contained a credential or private key.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/SensitivePayloadError'
+        '429':
+          description: The per-client rate limit has been exceeded.
+          headers:
+            retry-after:
+              description: Delay in seconds before attempting another request, when provided by the runtime.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitedError'
+        '503':
+          description: The AI provider remained unavailable after transient-error retries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderUnavailable'
+components:
+  parameters:
+    ClientId:
+      name: X-Client-Id
+      in: header
+      required: false
+      description: Optional client quota partition key. It is not authentication or authorization.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, provider]
+      properties:
+        status:
+          type: string
+          const: ok
+        provider:
+          type: string
+          enum: [mock, vertex]
+    GenerationRequest:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: User content. Must not contain secrets, tokens, or private keys.
+        system_instruction:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Optional server-approved instruction text.
+        max_output_tokens:
+          type: integer
+          minimum: 1
+          maximum: 1024
+          default: 256
+    GenerationSuccess:
+      type: object
+      required: [request_id, status, data]
+      properties:
+        request_id:
+          type: string
+          example: req-7f4f9dc1
+        status:
+          type: string
+          const: completed
+        data:
+          type: object
+          required: [output, provider, model]
+          properties:
+            output:
+              type: string
+            provider:
+              type: string
+              enum: [mock, vertex]
+            model:
+              type: string
+              example: gemini-2.5-flash
+    ValidationError:
+      type: object
+      required: [request_id, status, error]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          const: invalid_request
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              const: VALIDATION_ERROR
+            message:
+              type: string
+            details:
+              type: object
+    SensitivePayloadError:
+      type: object
+      required: [request_id, status, error]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          const: rejected
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              const: SENSITIVE_PAYLOAD_REJECTED
+            message:
+              type: string
+    RateLimitedError:
+      type: object
+      required: [request_id, status, error]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          const: rate_limited
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              const: RATE_LIMITED
+            message:
+              type: string
+    ProviderUnavailable:
+      type: object
+      required: [request_id, status, fallback]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          const: unavailable
+        fallback:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              const: AI_SERVICE_UNAVAILABLE
+            message:
+              type: string
+    GenericError:
+      type: object
+      required: [request_id, status, error]
+      properties:
+        request_id:
+          type: string
+        status:
+          type: string
+          const: error
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
